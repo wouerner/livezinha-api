@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LiveStream;
 use App\Models\Question;
+use App\Models\QuestionVote;
 use Illuminate\Http\Request;
 
 class QuestionController extends Controller
@@ -13,7 +14,10 @@ class QuestionController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Question::query();
+        $query = Question::withCount([
+            'votes as likes_count' => fn ($q) => $q->where('vote', 'like'),
+            'votes as dislikes_count' => fn ($q) => $q->where('vote', 'dislike'),
+        ]);
 
         if ($request->has('live_stream_id')) {
             $query->where('live_stream_id', $request->live_stream_id);
@@ -54,6 +58,11 @@ class QuestionController extends Controller
             'is_tagged' => false,
         ]);
 
+        $question->loadCount([
+            'votes as likes_count' => fn ($q) => $q->where('vote', 'like'),
+            'votes as dislikes_count' => fn ($q) => $q->where('vote', 'dislike'),
+        ]);
+
         return response()->json($question, 201);
     }
 
@@ -62,6 +71,11 @@ class QuestionController extends Controller
      */
     public function show(Question $question)
     {
+        $question->loadCount([
+            'votes as likes_count' => fn ($q) => $q->where('vote', 'like'),
+            'votes as dislikes_count' => fn ($q) => $q->where('vote', 'dislike'),
+        ]);
+
         return response()->json($question);
     }
 
@@ -75,15 +89,48 @@ class QuestionController extends Controller
             'is_tagged' => 'sometimes|required|boolean',
             'is_hidden' => 'sometimes|required|boolean',
         ]);
-
-        if (isset($validated['status']) && $validated['status'] === 'active') {
-            // Archive any other active questions for this live stream
-            Question::where('live_stream_id', $question->live_stream_id)
-                ->where('status', 'active')
-                ->update(['status' => 'archived']);
+ 
+        if (isset($validated['status'])) {
+            $now = now();
+ 
+            if ($validated['status'] === 'active') {
+                // Get currently active questions for this live stream, ordered by displayed_at ascending (oldest first)
+                $currentlyActive = Question::where('live_stream_id', $question->live_stream_id)
+                    ->where('status', 'active')
+                    ->orderBy('displayed_at', 'asc')
+                    ->get();
+ 
+                if ($currentlyActive->count() >= 3) {
+                    $oldest = $currentlyActive->first();
+                    $displayedAt = $oldest->displayed_at ? \Carbon\Carbon::parse($oldest->displayed_at) : null;
+                    $duration = $displayedAt ? $now->diffInSeconds($displayedAt) : null;
+ 
+                    $oldest->update([
+                        'status' => 'archived',
+                        'removed_at' => $now,
+                        'duration_seconds' => $duration,
+                    ]);
+                }
+ 
+                $validated['displayed_at'] = $now;
+                $validated['removed_at'] = null;
+                $validated['duration_seconds'] = null;
+            } elseif ($question->status === 'active' && $validated['status'] !== 'active') {
+                // If this question was active and is now being deactivated
+                $displayedAt = $question->displayed_at ? \Carbon\Carbon::parse($question->displayed_at) : null;
+                $duration = $displayedAt ? $now->diffInSeconds($displayedAt) : null;
+ 
+                $validated['removed_at'] = $now;
+                $validated['duration_seconds'] = $duration;
+            }
         }
-
+ 
         $question->update($validated);
+
+        $question->loadCount([
+            'votes as likes_count' => fn ($q) => $q->where('vote', 'like'),
+            'votes as dislikes_count' => fn ($q) => $q->where('vote', 'dislike'),
+        ]);
 
         return response()->json($question);
     }
@@ -97,6 +144,44 @@ class QuestionController extends Controller
         return response()->json(['message' => 'Pergunta excluída com sucesso']);
     }
 
+    public function vote(Request $request, Question $question)
+    {
+        $validated = $request->validate([
+            'vote' => 'required|in:like,dislike',
+        ]);
+
+        $ip = $request->ip();
+        $existingVote = QuestionVote::where('question_id', $question->id)
+            ->where('voter_ip', $ip)
+            ->first();
+
+        if ($existingVote) {
+            if ($existingVote->vote === $validated['vote']) {
+                $existingVote->delete();
+            } else {
+                $existingVote->update(['vote' => $validated['vote']]);
+            }
+        } else {
+            QuestionVote::create([
+                'question_id' => $question->id,
+                'vote' => $validated['vote'],
+                'voter_ip' => $ip,
+            ]);
+        }
+
+        $likesCount = QuestionVote::where('question_id', $question->id)
+            ->where('vote', 'like')
+            ->count();
+        $dislikesCount = QuestionVote::where('question_id', $question->id)
+            ->where('vote', 'dislike')
+            ->count();
+
+        return response()->json([
+            'likes_count' => $likesCount,
+            'dislikes_count' => $dislikesCount,
+        ]);
+    }
+
     /**
      * Get the currently active question for the active live stream.
      */
@@ -105,14 +190,21 @@ class QuestionController extends Controller
         // Find active live stream first
         $activeLive = LiveStream::where('status', 'active')->first();
         if (!$activeLive) {
-            return response()->json(null);
+            return response()->json([]);
         }
-
-        $activeQuestion = Question::where('live_stream_id', $activeLive->id)
+ 
+        $activeQuestions = Question::withCount([
+                'votes as likes_count' => fn ($q) => $q->where('vote', 'like'),
+                'votes as dislikes_count' => fn ($q) => $q->where('vote', 'dislike'),
+            ])
+            ->where('live_stream_id', $activeLive->id)
             ->where('status', 'active')
-            ->first();
-
-        return response()->json($activeQuestion);
+            ->where('is_hidden', false)
+            ->orderBy('displayed_at', 'asc')
+            ->take(3)
+            ->get();
+ 
+        return response()->json($activeQuestions);
     }
 
     /**
@@ -120,7 +212,11 @@ class QuestionController extends Controller
      */
     public function publicQuestions(LiveStream $liveStream)
     {
-        $questions = Question::where('live_stream_id', $liveStream->id)
+        $questions = Question::withCount([
+                'votes as likes_count' => fn ($q) => $q->where('vote', 'like'),
+                'votes as dislikes_count' => fn ($q) => $q->where('vote', 'dislike'),
+            ])
+            ->where('live_stream_id', $liveStream->id)
             ->whereIn('status', ['approved', 'active'])
             ->where('is_hidden', false)
             ->orderBy('created_at', 'desc')

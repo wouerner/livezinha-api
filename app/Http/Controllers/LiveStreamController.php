@@ -56,6 +56,7 @@ class LiveStreamController extends Controller
         if (isset($validated['status']) && $validated['status'] === 'active') {
             // Deactivate all other active lives
             LiveStream::where('status', 'active')->update(['status' => 'finished']);
+            $validated['started_at'] = now();
         }
 
         $liveStream->update($validated);

@@ -15,11 +15,19 @@ class Question extends Model
         'status',
         'is_tagged',
         'is_hidden',
+        'displayed_at',
+        'removed_at',
+        'duration_seconds',
     ];
 
     public function liveStream()
     {
         return $this->belongsTo(LiveStream::class);
+    }
+
+    public function votes()
+    {
+        return $this->hasMany(QuestionVote::class);
     }
 
     public static function generateUniquePasscode(): string

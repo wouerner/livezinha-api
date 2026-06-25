@@ -17,6 +17,7 @@ Route::get('/ping', function () {
 Route::get('/lives/active', [App\Http\Controllers\LiveStreamController::class, 'activeLive']);
 Route::get('/lives/active/question', [App\Http\Controllers\QuestionController::class, 'activeQuestion']);
 Route::get('/lives/{liveStream}/questions/public', [App\Http\Controllers\QuestionController::class, 'publicQuestions']);
+Route::post('/questions/{question}/vote', [App\Http\Controllers\QuestionController::class, 'vote']);
 
 // Admin & Moderation endpoints (standard resources)
 Route::apiResource('lives', App\Http\Controllers\LiveStreamController::class)->parameters(['lives' => 'liveStream']);
