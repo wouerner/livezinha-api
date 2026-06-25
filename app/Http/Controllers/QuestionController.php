@@ -14,6 +14,8 @@ class QuestionController extends Controller
      */
     public function index(Request $request)
     {
+        $this->authorize('viewAny', Question::class);
+
         $query = Question::withCount([
             'votes as likes_count' => fn ($q) => $q->where('vote', 'like'),
             'votes as dislikes_count' => fn ($q) => $q->where('vote', 'dislike'),
@@ -38,8 +40,8 @@ class QuestionController extends Controller
         $validated = $request->validate([
             'live_stream_id' => 'required|exists:live_streams,id',
             'name' => 'required|string|max:255',
-            'tiktok_handle' => 'nullable|string|max:255',
-            'question_text' => 'required|string',
+            'tiktok_handle' => 'nullable|string|max:255|regex:/^@?[a-zA-Z0-9_.]+$/',
+            'question_text' => 'required|string|max:1000',
         ]);
 
         // Clean up tiktok handle (ensure it has @ prefix if not empty)
@@ -71,6 +73,8 @@ class QuestionController extends Controller
      */
     public function show(Question $question)
     {
+        $this->authorize('view', $question);
+
         $question->loadCount([
             'votes as likes_count' => fn ($q) => $q->where('vote', 'like'),
             'votes as dislikes_count' => fn ($q) => $q->where('vote', 'dislike'),
@@ -84,6 +88,8 @@ class QuestionController extends Controller
      */
     public function update(Request $request, Question $question)
     {
+        $this->authorize('update', $question);
+
         $validated = $request->validate([
             'status' => 'sometimes|required|in:pending,approved,active,archived',
             'is_tagged' => 'sometimes|required|boolean',
@@ -140,6 +146,8 @@ class QuestionController extends Controller
      */
     public function destroy(Question $question)
     {
+        $this->authorize('delete', $question);
+
         $question->delete();
         return response()->json(['message' => 'Pergunta excluída com sucesso']);
     }
@@ -151,16 +159,19 @@ class QuestionController extends Controller
         ]);
 
         $ip = $request->ip();
+
         $existingVote = QuestionVote::where('question_id', $question->id)
             ->where('voter_ip', $ip)
             ->first();
 
         if ($existingVote) {
-            if ($existingVote->vote === $validated['vote']) {
-                $existingVote->delete();
-            } else {
-                $existingVote->update(['vote' => $validated['vote']]);
+            if ($existingVote->created_at->gt(now()->subHour())) {
+                return response()->json([
+                    'message' => 'Aguarde 1 hora para votar novamente nesta pergunta.',
+                ], 429);
             }
+
+            $existingVote->update(['vote' => $validated['vote']]);
         } else {
             QuestionVote::create([
                 'question_id' => $question->id,

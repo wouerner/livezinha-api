@@ -7,26 +7,28 @@ use Illuminate\Http\Request;
 
 class LiveStreamController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
+        $this->authorize('viewAny', LiveStream::class);
+
         return response()->json(LiveStream::orderBy('scheduled_at', 'desc')->get());
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
+        $this->authorize('create', LiveStream::class);
+
         $validated = $request->validate([
             'title' => 'required|string|max:255',
+            'streamer_name' => 'nullable|string|max:255',
+            'live_url' => 'nullable|url|max:2048',
             'scheduled_at' => 'required|date',
         ]);
 
         $liveStream = LiveStream::create([
             'title' => $validated['title'],
+            'streamer_name' => $validated['streamer_name'] ?? null,
+            'live_url' => $validated['live_url'] ?? null,
             'scheduled_at' => $validated['scheduled_at'],
             'status' => 'scheduled',
         ]);
@@ -39,24 +41,25 @@ class LiveStreamController extends Controller
      */
     public function show(LiveStream $liveStream)
     {
+        $this->authorize('view', $liveStream);
+
         return response()->json($liveStream);
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, LiveStream $liveStream)
     {
+        $this->authorize('update', $liveStream);
         $validated = $request->validate([
             'title' => 'sometimes|required|string|max:255',
+            'streamer_name' => 'nullable|string|max:255',
+            'live_url' => 'nullable|url|max:2048',
             'scheduled_at' => 'sometimes|required|date',
             'status' => 'sometimes|required|in:scheduled,active,finished',
         ]);
 
         if (isset($validated['status']) && $validated['status'] === 'active') {
-            // Deactivate all other active lives
             LiveStream::where('status', 'active')->update(['status' => 'finished']);
-            $validated['started_at'] = now();
+            $liveStream->started_at = now();
         }
 
         $liveStream->update($validated);
@@ -69,8 +72,18 @@ class LiveStreamController extends Controller
      */
     public function destroy(LiveStream $liveStream)
     {
+        $this->authorize('delete', $liveStream);
+
         $liveStream->delete();
         return response()->json(['message' => 'Live deletada com sucesso']);
+    }
+
+    /**
+     * Public listing of all lives (no sensitive data).
+     */
+    public function publicIndex()
+    {
+        return response()->json(LiveStream::orderBy('scheduled_at', 'desc')->get());
     }
 
     /**

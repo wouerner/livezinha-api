@@ -35,6 +35,8 @@ class DatabaseSeeder extends Seeder
         $finishedLiveStart = Carbon::now()->subDays(2)->subHours(1);
         $finishedLive = LiveStream::create([
             'title' => 'Live #1: Introdução ao Vue 3 e Laravel',
+            'streamer_name' => 'Admin',
+            'live_url' => 'https://twitch.tv/adminlive',
             'scheduled_at' => Carbon::now()->subDays(2),
             'status' => 'finished',
             'started_at' => $finishedLiveStart,
@@ -73,6 +75,8 @@ class DatabaseSeeder extends Seeder
         $activeLiveStart = Carbon::now()->subHours(1);
         $activeLive = LiveStream::create([
             'title' => 'Live #2: Criando Apps Modernos com Vuetify',
+            'streamer_name' => 'Admin',
+            'live_url' => 'https://twitch.tv/adminlive',
             'scheduled_at' => Carbon::now(),
             'status' => 'active',
             'started_at' => $activeLiveStart,
@@ -157,6 +161,8 @@ class DatabaseSeeder extends Seeder
         // 5. Create a Scheduled Live (Future)
         $scheduledLive = LiveStream::create([
             'title' => 'Live #3: Deploy Avançado com Docker e Laravel Sail',
+            'streamer_name' => 'Admin',
+            'live_url' => 'https://youtube.com/watch?v=exemplo',
             'scheduled_at' => Carbon::now()->addDays(3)->hour(20)->minute(0)->second(0),
             'status' => 'scheduled',
         ]);
