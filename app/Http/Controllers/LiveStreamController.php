@@ -23,14 +23,19 @@ class LiveStreamController extends Controller
             'streamer_name' => 'nullable|string|max:255',
             'live_url' => 'nullable|url|max:2048',
             'scheduled_at' => 'required|date',
+            'status' => 'sometimes|required|in:scheduled,active,finished',
         ]);
+
+        if (($validated['status'] ?? 'scheduled') === 'active' && LiveStream::where('status', 'active')->exists()) {
+            return response()->json(['message' => 'Já existe uma live ativa. Finalize-a antes de ativar outra.'], 422);
+        }
 
         $liveStream = LiveStream::create([
             'title' => $validated['title'],
             'streamer_name' => $validated['streamer_name'] ?? null,
             'live_url' => $validated['live_url'] ?? null,
             'scheduled_at' => $validated['scheduled_at'],
-            'status' => 'scheduled',
+            'status' => $validated['status'] ?? 'scheduled',
         ]);
 
         return response()->json($liveStream, 201);
@@ -57,9 +62,11 @@ class LiveStreamController extends Controller
             'status' => 'sometimes|required|in:scheduled,active,finished',
         ]);
 
-        if (isset($validated['status']) && $validated['status'] === 'active') {
-            LiveStream::where('status', 'active')->update(['status' => 'finished']);
-            $liveStream->started_at = now();
+        if (isset($validated['status']) && $validated['status'] === 'active' && $liveStream->status !== 'active') {
+            $exists = LiveStream::where('status', 'active')->where('id', '!=', $liveStream->id)->exists();
+            if ($exists) {
+                return response()->json(['message' => 'Já existe uma live ativa. Finalize-a antes de ativar outra.'], 422);
+            }
         }
 
         $liveStream->update($validated);

@@ -79,6 +79,9 @@ class QuestionStackTest extends TestCase
 
     public function test_activating_fourth_question_archives_oldest()
     {
+        $user = \App\Models\User::factory()->create();
+        \Laravel\Sanctum\Sanctum::actingAs($user);
+
         $live = LiveStream::create([
             'title' => 'Test Live',
             'scheduled_at' => now(),
