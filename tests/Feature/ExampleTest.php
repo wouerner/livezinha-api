@@ -1,6 +1,6 @@
 <?php
 
-it('returns a successful response from the welcome page', function () {
+it('returns a successful response from the API root', function () {
     $this->get('/')
         ->assertOk();
 });
